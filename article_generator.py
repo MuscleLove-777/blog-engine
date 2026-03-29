@@ -7,6 +7,7 @@ Gemini APIを使用してSEO最適化されたブログ記事を自動生成す�
 import json
 import logging
 import re
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -35,7 +36,7 @@ class ArticleGenerator:
         logger.info("ArticleGenerator を初期化しました（モデル: %s）", config.GEMINI_MODEL)
 
     def generate_article(self, keyword: str, category: str, prompts=None) -> dict:
-        """キーワードとカテゴリからSEO最適化されたブログ記事を生成する"""
+        """キーワードとカテゴリからSEO最適化されたブログ記事を生成する（最大3回リトライ）"""
         logger.info("記事生成を開始: キーワード='%s', カテゴリ='%s'", keyword, category)
 
         if prompts and hasattr(prompts, 'build_article_prompt'):
@@ -43,22 +44,36 @@ class ArticleGenerator:
         else:
             prompt = self._build_default_prompt(keyword, category)
 
-        try:
-            from google.genai import types
-            gen_config = types.GenerateContentConfig(
-                max_output_tokens=16384,
-                response_mime_type="application/json",
-            )
-            response = self.client.models.generate_content(
-                model=self.model_name, contents=prompt, config=gen_config
-            )
-            response_text = response.text
-            logger.debug("APIレスポンスを受信（%d文字）", len(response_text))
-        except Exception as e:
-            logger.error("Gemini API呼び出しに失敗: %s", e)
-            raise
+        max_retries = 3
+        last_error = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                from google.genai import types
+                gen_config = types.GenerateContentConfig(
+                    max_output_tokens=16384,
+                    response_mime_type="application/json",
+                )
+                response = self.client.models.generate_content(
+                    model=self.model_name, contents=prompt, config=gen_config
+                )
+                response_text = response.text
+                logger.debug("APIレスポンスを受信（%d文字）", len(response_text))
+            except Exception as e:
+                logger.error("Gemini API呼び出しに失敗: %s", e)
+                raise
 
-        article = self._parse_response(response_text)
+            try:
+                article = self._parse_response(response_text)
+                break
+            except (json.JSONDecodeError, ValueError) as e:
+                last_error = e
+                if attempt < max_retries:
+                    logger.warning("JSONパース失敗（試行%d/%d）、リトライします: %s", attempt, max_retries, e)
+                    time.sleep(2 * attempt)
+                else:
+                    logger.error("JSONパースに失敗: %s", e)
+                    raise ValueError(f"JSONパースに失敗: {e}") from e
+
         article["keyword"] = keyword
         article["category"] = category
         article["generated_at"] = datetime.now().isoformat()
@@ -166,7 +181,20 @@ class ArticleGenerator:
                     result.append(ch)
             else:
                 result.append(ch)
-        return ''.join(result)
+        repaired = ''.join(result)
+
+        # 5. 切り詰められたJSONを閉じる（Unterminated string対策）
+        # 開いたままの文字列を閉じ、不足するブラケットを補完
+        open_braces = repaired.count('{') - repaired.count('}')
+        open_brackets = repaired.count('[') - repaired.count(']')
+        if open_braces > 0 or open_brackets > 0:
+            # 未閉じの文字列があれば閉じる
+            if in_string:
+                repaired += '"'
+            repaired += ']' * max(open_brackets, 0)
+            repaired += '}' * max(open_braces, 0)
+
+        return repaired
 
     def _parse_response(self, response_text: str) -> dict:
         json_match = re.search(
