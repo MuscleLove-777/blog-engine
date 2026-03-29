@@ -111,6 +111,20 @@ class ArticleGenerator:
 - tagsは5個ちょうど生成すること
 - slugは半角英数字とハイフンのみ使用すること"""
 
+    @staticmethod
+    def _fix_json_control_chars(text: str) -> str:
+        """JSON文字列内の不正な制御文字を修正する"""
+        # JSON文字列値内の生の改行・タブをエスケープシーケンスに置換
+        import re as _re
+        def _fix_match(m):
+            s = m.group(0)
+            s = s.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
+            # その他の制御文字を除去
+            s = _re.sub(r'[\x00-\x1f]', '', s)
+            return s
+        # JSON文字列値（ダブルクォートで囲まれた部分）を検出して修正
+        return _re.sub(r'"(?:[^"\\]|\\.)*"', _fix_match, text, flags=_re.DOTALL)
+
     def _parse_response(self, response_text: str) -> dict:
         json_match = re.search(
             r"```json\s*(.*?)\s*```", response_text, re.DOTALL
@@ -118,14 +132,18 @@ class ArticleGenerator:
 
         try:
             if json_match:
-                article_data = json.loads(json_match.group(1))
+                raw = json_match.group(1)
             else:
                 cleaned = response_text.strip()
                 start = cleaned.find("{")
                 end = cleaned.rfind("}") + 1
                 if start >= 0 and end > start:
-                    cleaned = cleaned[start:end]
-                article_data = json.loads(cleaned)
+                    raw = cleaned[start:end]
+                else:
+                    raw = cleaned
+            # 制御文字を修正してからパース
+            raw = self._fix_json_control_chars(raw)
+            article_data = json.loads(raw)
         except json.JSONDecodeError as e:
             logger.error(
                 "JSONパースに失敗: %s\nレスポンス先頭200文字: %s",
