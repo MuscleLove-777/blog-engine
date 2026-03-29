@@ -46,7 +46,8 @@ class ArticleGenerator:
         try:
             from google.genai import types
             gen_config = types.GenerateContentConfig(
-                max_output_tokens=8192,
+                max_output_tokens=16384,
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
             )
             response = self.client.models.generate_content(
                 model=self.model_name, contents=prompt, config=gen_config
