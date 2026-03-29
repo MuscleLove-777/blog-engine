@@ -1,0 +1,97 @@
+{# トップページ: ヒーローセクション + Bentoカードグリッド + サイドバー #}
+{% extends "base.html" %}
+
+{% block title %}{{ blog_name }} - {{ blog_description }}{% endblock %}
+
+{% block nav_items %}
+{% if categories %}{% for cat_name in categories.keys() %}
+<a href="{{ blog_url }}/category/{{ cat_name }}.html">{{ cat_name }}</a>
+{% endfor %}{% endif %}
+{% endblock %}
+
+{% block footer_categories %}
+{% if categories %}{% for cat_name, cat_articles in categories.items() %}
+<li><a href="{{ blog_url }}/category/{{ cat_name }}.html">{{ cat_name }}（{{ cat_articles | length }}）</a></li>
+{% endfor %}{% endif %}
+{% endblock %}
+
+{% block content %}
+{# ヒーローセクション #}
+<section style="padding:3.5rem 0 2.5rem;text-align:center;">
+    <h1 style="margin-bottom:0.75rem;">{{ blog_name }}</h1>
+    <p class="text-muted" style="font-size:clamp(0.95rem,1.2vw+0.5rem,1.15rem);max-width:600px;margin:0 auto 1.5rem;line-height:1.7;">{{ blog_description }}</p>
+    {% if categories %}
+    <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:0.5rem;">
+        {% for cat_name, cat_articles in categories.items() %}
+        <a href="{{ blog_url }}/category/{{ cat_name }}.html" class="tag" style="font-size:0.82rem;padding:0.3em 0.85em;">{{ cat_name }} <span style="opacity:0.6;margin-left:0.25em;">({{ cat_articles | length }})</span></a>
+        {% endfor %}
+    </div>
+    {% endif %}
+</section>
+
+<div class="layout-main">
+    <div class="content-area">
+        {% if articles %}
+        <div class="card-grid">
+            {% for article in articles %}
+            <article class="card">
+                <div class="card-thumb"><span class="card-thumb-text">{{ article.category | default('Blog') }}</span></div>
+                <div class="card-body">
+                    <h2 class="card-title"><a href="{{ blog_url }}/articles/{{ article.slug }}.html">{{ article.title }}</a></h2>
+                    <div class="card-meta">
+                        <span>{{ article.date }}</span>
+                        <span class="reading-time">3分で読める</span>
+                        {% if article.category %}<a href="{{ blog_url }}/category/{{ article.category }}.html" class="category-badge">{{ article.category }}</a>{% endif %}
+                    </div>
+                    {% if article.description %}<p class="card-excerpt">{{ article.description }}</p>{% endif %}
+                    {% if article.tags %}<div class="card-tags">{% for tag in article.tags[:3] %}<span class="tag">{{ tag }}</span>{% endfor %}</div>{% endif %}
+                </div>
+            </article>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state"><p>まだ記事がありません。</p></div>
+        {% endif %}
+
+        {% if total_pages > 1 %}
+        <nav class="pagination">
+            {% if current_page > 1 %}
+                {% if current_page == 2 %}<a href="{{ blog_url }}/index.html">&laquo; 前へ</a>
+                {% else %}<a href="{{ blog_url }}/page/{{ current_page - 1 }}.html">&laquo; 前へ</a>{% endif %}
+            {% endif %}
+            {% for page_num in range(1, total_pages + 1) %}
+                {% if page_num == current_page %}<span class="current">{{ page_num }}</span>
+                {% elif page_num == 1 %}<a href="{{ blog_url }}/index.html">{{ page_num }}</a>
+                {% else %}<a href="{{ blog_url }}/page/{{ page_num }}.html">{{ page_num }}</a>{% endif %}
+            {% endfor %}
+            {% if current_page < total_pages %}<a href="{{ blog_url }}/page/{{ current_page + 1 }}.html">次へ &raquo;</a>{% endif %}
+        </nav>
+        {% endif %}
+    </div>
+
+    <aside class="sidebar">
+        <div class="sidebar-widget">
+            <h3 class="sidebar-widget-title">カテゴリ</h3>
+            {% if categories %}
+            <ul class="sidebar-category-list">
+                {% for cat_name, cat_articles in categories.items() %}
+                <li><a href="{{ blog_url }}/category/{{ cat_name }}.html">{{ cat_name }}<span class="sidebar-category-count">{{ cat_articles | length }}</span></a></li>
+                {% endfor %}
+            </ul>
+            {% else %}<p class="text-muted" style="font-size:0.88rem;">カテゴリはまだありません。</p>{% endif %}
+        </div>
+        <div class="sidebar-widget">
+            <h3 class="sidebar-widget-title">このブログについて</h3>
+            <p class="text-muted" style="font-size:0.88rem;line-height:1.7;">{{ blog_description }}</p>
+        </div>
+        {% if adsense_enabled and adsense_client_id %}
+        <div class="sidebar-widget adsense-slot">
+            <ins class="adsbygoogle" style="display:block"
+                 data-ad-client="{{ adsense_client_id }}" data-ad-slot="auto"
+                 data-ad-format="rectangle" data-full-width-responsive="true"></ins>
+            <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+        </div>
+        {% endif %}
+    </aside>
+</div>
+{% endblock %}

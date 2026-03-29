@@ -1,0 +1,104 @@
+{# 記事ページ: 目次・読了時間・関連記事・JSON-LD BlogPosting #}
+{% extends "base.html" %}
+
+{% block title %}{{ article.title }} | {{ blog_name }}{% endblock %}
+{% block meta_description %}{{ article.description | default(article.title) }}{% endblock %}
+{% block canonical %}{{ blog_url }}/articles/{{ article.slug }}.html{% endblock %}
+{% block og_title %}{{ article.title }}{% endblock %}
+{% block og_description %}{{ article.description | default(article.title) }}{% endblock %}
+{% block og_type %}article{% endblock %}
+{% block og_url %}{{ blog_url }}/articles/{{ article.slug }}.html{% endblock %}
+{% block twitter_title %}{{ article.title }}{% endblock %}
+{% block twitter_description %}{{ article.description | default(article.title) }}{% endblock %}
+
+{% block json_ld %}
+<script type="application/ld+json">
+{
+    "@context": "https://schema.org",
+    "@type": "BlogPosting",
+    "headline": "{{ article.title }}",
+    "description": "{{ article.description | default(article.title) }}",
+    "datePublished": "{{ article.date | default('') }}",
+    "dateModified": "{{ article.date | default('') }}",
+    "author": {"@type": "Organization", "name": "{{ blog_name }}"},
+    "publisher": {"@type": "Organization", "name": "{{ blog_name }}"},
+    "mainEntityOfPage": {"@type": "WebPage", "@id": "{{ blog_url }}/articles/{{ article.slug }}.html"}
+    {% if article.tags %},"keywords": "{{ article.tags | join(', ') }}"{% endif %}
+}
+</script>
+{% endblock %}
+
+{% block content %}
+<div class="layout-main">
+    <div class="content-area">
+        <nav class="breadcrumb" aria-label="パンくずリスト">
+            <a href="{{ blog_url }}/index.html">ホーム</a>
+            <span class="breadcrumb-sep">/</span>
+            {% if article.category %}
+            <a href="{{ blog_url }}/category/{{ article.category }}.html">{{ article.category }}</a>
+            <span class="breadcrumb-sep">/</span>
+            {% endif %}
+            <span>{{ article.title }}</span>
+        </nav>
+
+        <article>
+            <header class="article-header">
+                <h1 class="article-title">{{ article.title }}</h1>
+                <div class="article-meta">
+                    <span>{{ article.date }}</span>
+                    <span class="reading-time">3分で読める</span>
+                    {% if article.category %}<a href="{{ blog_url }}/category/{{ article.category }}.html" class="category-badge">{{ article.category }}</a>{% endif %}
+                </div>
+                {% if article.tags %}<div class="card-tags mt-1">{% for tag in article.tags %}<span class="tag">{{ tag }}</span>{% endfor %}</div>{% endif %}
+            </header>
+
+            {% if adsense_enabled and adsense_client_id %}
+            <div class="adsense-slot">
+                <ins class="adsbygoogle" style="display:block" data-ad-client="{{ adsense_client_id }}" data-ad-slot="auto" data-ad-format="auto" data-full-width-responsive="true"></ins>
+                <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+            </div>
+            {% endif %}
+
+            {% if toc %}
+            <details class="toc-container" open>
+                <summary class="toc-title" style="cursor:pointer;user-select:none;">目次</summary>
+                {{ toc | safe }}
+            </details>
+            {% endif %}
+
+            <div class="article-body">{{ content | safe }}</div>
+
+            {% if adsense_enabled and adsense_client_id %}
+            <div class="adsense-slot">
+                <ins class="adsbygoogle" style="display:block" data-ad-client="{{ adsense_client_id }}" data-ad-slot="auto" data-ad-format="auto" data-full-width-responsive="true"></ins>
+                <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
+            </div>
+            {% endif %}
+
+            <div class="share-buttons">
+                <a class="share-btn share-btn-twitter" href="https://twitter.com/intent/tweet?url={{ blog_url }}/articles/{{ article.slug }}.html&text={{ article.title }}" target="_blank" rel="noopener noreferrer">X でシェア</a>
+                <a class="share-btn share-btn-facebook" href="https://www.facebook.com/sharer/sharer.php?u={{ blog_url }}/articles/{{ article.slug }}.html" target="_blank" rel="noopener noreferrer">Facebook</a>
+                <a class="share-btn share-btn-hatena" href="https://b.hatena.ne.jp/add?mode=confirm&url={{ blog_url }}/articles/{{ article.slug }}.html&title={{ article.title }}" target="_blank" rel="noopener noreferrer">はてブ</a>
+                <a class="share-btn share-btn-line" href="https://social-plugins.line.me/lineit/share?url={{ blog_url }}/articles/{{ article.slug }}.html" target="_blank" rel="noopener noreferrer">LINE</a>
+            </div>
+        </article>
+
+        {% if related %}
+        <section class="mt-3">
+            <h2 style="margin-bottom:1rem;">関連記事</h2>
+            <div class="card-grid">
+                {% for rel in related %}
+                <article class="card">
+                    <div class="card-thumb"><span class="card-thumb-text">{{ rel.category | default('Blog') }}</span></div>
+                    <div class="card-body">
+                        <h3 class="card-title"><a href="{{ blog_url }}/articles/{{ rel.slug }}.html">{{ rel.title }}</a></h3>
+                        <div class="card-meta"><span>{{ rel.date }}</span>{% if rel.category %}<span class="category-badge">{{ rel.category }}</span>{% endif %}</div>
+                    </div>
+                </article>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

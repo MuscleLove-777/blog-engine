@@ -1,0 +1,48 @@
+{# カテゴリページ: Bentoカードグリッドで記事一覧 #}
+{% extends "base.html" %}
+
+{% block title %}{{ category }} の記事一覧 | {{ blog_name }}{% endblock %}
+{% block meta_description %}{{ blog_name }} の「{{ category }}」カテゴリに属する記事一覧（{{ article_count }}件）{% endblock %}
+{% block canonical %}{{ blog_url }}/category/{{ category }}.html{% endblock %}
+{% block og_title %}{{ category }} の記事一覧{% endblock %}
+
+{% block content %}
+<div class="layout-main">
+    <div class="content-area">
+        <nav class="breadcrumb" aria-label="パンくずリスト">
+            <a href="{{ blog_url }}/index.html">ホーム</a>
+            <span class="breadcrumb-sep">/</span>
+            <span>{{ category }}</span>
+        </nav>
+
+        <header class="mb-3" style="padding-bottom:1.5rem;border-bottom:1px solid var(--border);">
+            <h1 style="display:flex;align-items:center;gap:0.75rem;">
+                <span class="category-badge" style="font-size:0.9rem;">{{ category }}</span>
+                <span>の記事一覧</span>
+            </h1>
+            <p class="text-muted mt-1">{{ article_count }} 件の記事</p>
+        </header>
+
+        {% if articles %}
+        <div class="card-grid" style="margin-top:1.5rem;">
+            {% for article in articles %}
+            <article class="card">
+                <div class="card-thumb"><span class="card-thumb-text">{{ category }}</span></div>
+                <div class="card-body">
+                    <h2 class="card-title"><a href="{{ blog_url }}/articles/{{ article.slug }}.html">{{ article.title }}</a></h2>
+                    <div class="card-meta">
+                        <span>{{ article.date }}</span>
+                        <span class="reading-time">3分で読める</span>
+                    </div>
+                    {% if article.description %}<p class="card-excerpt">{{ article.description }}</p>{% endif %}
+                    {% if article.tags %}<div class="card-tags">{% for tag in article.tags[:3] %}<span class="tag">{{ tag }}</span>{% endfor %}</div>{% endif %}
+                </div>
+            </article>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state"><p>このカテゴリにはまだ記事がありません。</p></div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
