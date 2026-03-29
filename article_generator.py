@@ -114,16 +114,59 @@ class ArticleGenerator:
     @staticmethod
     def _fix_json_control_chars(text: str) -> str:
         """JSON文字列内の不正な制御文字を修正する"""
-        # JSON文字列値内の生の改行・タブをエスケープシーケンスに置換
         import re as _re
         def _fix_match(m):
             s = m.group(0)
             s = s.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
-            # その他の制御文字を除去
             s = _re.sub(r'[\x00-\x1f]', '', s)
             return s
-        # JSON文字列値（ダブルクォートで囲まれた部分）を検出して修正
         return _re.sub(r'"(?:[^"\\]|\\.)*"', _fix_match, text, flags=_re.DOTALL)
+
+    @staticmethod
+    def _repair_json(text: str) -> str:
+        """壊れたJSONを修復する（Geminiの長文生成で発生しがちな問題に対応）"""
+        # 1. BOMや不可視文字を除去
+        text = text.strip().lstrip('\ufeff')
+        # 2. ```json ... ``` ブロックを除去
+        json_match = re.search(r'```json\s*(.*?)\s*```', text, re.DOTALL)
+        if json_match:
+            text = json_match.group(1)
+        # 3. JSONオブジェクト部分を抽出
+        start = text.find('{')
+        end = text.rfind('}') + 1
+        if start >= 0 and end > start:
+            text = text[start:end]
+        # 4. 文字列値内の生の改行をエスケープ
+        result = []
+        in_string = False
+        escape_next = False
+        for ch in text:
+            if escape_next:
+                result.append(ch)
+                escape_next = False
+                continue
+            if ch == '\\' and in_string:
+                result.append(ch)
+                escape_next = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                result.append(ch)
+                continue
+            if in_string:
+                if ch == '\n':
+                    result.append('\\n')
+                elif ch == '\r':
+                    result.append('\\r')
+                elif ch == '\t':
+                    result.append('\\t')
+                elif ord(ch) < 0x20:
+                    pass  # 制御文字を除去
+                else:
+                    result.append(ch)
+            else:
+                result.append(ch)
+        return ''.join(result)
 
     def _parse_response(self, response_text: str) -> dict:
         json_match = re.search(
@@ -144,14 +187,20 @@ class ArticleGenerator:
             # 制御文字を修正してからパース
             raw = self._fix_json_control_chars(raw)
             article_data = json.loads(raw)
-        except json.JSONDecodeError as e:
-            logger.error(
-                "JSONパースに失敗: %s\nレスポンス先頭200文字: %s",
-                e, response_text[:200],
-            )
-            raise ValueError(
-                f"APIレスポンスのJSONパースに失敗しました: {e}"
-            ) from e
+        except json.JSONDecodeError as e1:
+            logger.warning("JSONパース初回失敗、修復を試行: %s", e1)
+            try:
+                repaired = self._repair_json(response_text)
+                article_data = json.loads(repaired)
+                logger.info("JSON修復に成功しました")
+            except json.JSONDecodeError as e2:
+                logger.error(
+                    "JSON修復後もパースに失敗: %s\nレスポンス先頭200文字: %s",
+                    e2, response_text[:200],
+                )
+                raise ValueError(
+                    f"APIレスポンスのJSONパースに失敗しました: {e2}"
+                ) from e2
 
         required_fields = ["title", "content", "meta_description", "tags", "slug"]
         missing = [f for f in required_fields if f not in article_data]
