@@ -47,6 +47,7 @@ class ArticleGenerator:
             from google.genai import types
             gen_config = types.GenerateContentConfig(
                 max_output_tokens=16384,
+                response_mime_type="application/json",
             )
             response = self.client.models.generate_content(
                 model=self.model_name, contents=prompt, config=gen_config
