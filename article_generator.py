@@ -44,8 +44,12 @@ class ArticleGenerator:
             prompt = self._build_default_prompt(keyword, category)
 
         try:
+            from google.genai import types
+            gen_config = types.GenerateContentConfig(
+                max_output_tokens=8192,
+            )
             response = self.client.models.generate_content(
-                model=self.model_name, contents=prompt
+                model=self.model_name, contents=prompt, config=gen_config
             )
             response_text = response.text
             logger.debug("APIレスポンスを受信（%d文字）", len(response_text))
