@@ -42,6 +42,12 @@
         </nav>
 
         <article>
+            {# ヒーロー画像（CSS生成・コスト0） #}
+            <div class="article-hero" style="background: linear-gradient({{ article.hero_gradient | default('135deg') }}, var(--color-primary), var(--color-accent));">
+                <span class="article-hero-emoji">{{ article.hero_emoji | default('📝') }}</span>
+                <div class="article-hero-pattern"></div>
+            </div>
+
             <header class="article-header">
                 <h1 class="article-title">{{ article.title }}</h1>
                 <div class="article-meta">

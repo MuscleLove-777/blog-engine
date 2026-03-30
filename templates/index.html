@@ -35,7 +35,10 @@
         <div class="card-grid">
             {% for article in articles %}
             <article class="card">
-                <div class="card-thumb"><span class="card-thumb-text">{{ article.category | default('Blog') }}</span></div>
+                <div class="card-thumb">
+                    {% if article.hero_emoji %}<span class="card-thumb-emoji">{{ article.hero_emoji }}</span>{% endif %}
+                    <span class="card-thumb-text">{{ article.category | default('Blog') }}</span>
+                </div>
                 <div class="card-body">
                     <h2 class="card-title"><a href="{{ blog_url }}/articles/{{ article.slug }}.html">{{ article.title }}</a></h2>
                     <div class="card-meta">

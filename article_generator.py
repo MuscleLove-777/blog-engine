@@ -108,6 +108,15 @@ class ArticleGenerator:
 2. 本文（H2で3〜5セクション、必要に応じてH3を使用）
 3. まとめ（要点整理と次のアクション提案）
 
+【ビジュアル要件】
+- 各H2セクションの冒頭に、内容を象徴する絵文字アイコンを付けること（例: ## 🔍 キーワード選定のコツ）
+- 本文中に「ポイント」「注意」「まとめ」などの強調ボックスをMarkdownの引用（>）で表現すること
+  - > 💡 **ポイント**: 〜
+  - > ⚠️ **注意**: 〜
+  - > ✅ **まとめ**: 〜
+- 本文中に比較表やステップ表をMarkdownテーブルで積極的に使うこと
+- 箇条書きだけでなく、番号付きリストも適宜使い分けること
+
 【出力形式】
 以下のJSON形式で出力してください。JSONブロック以外のテキストは出力しないでください。
 
@@ -117,14 +126,18 @@ class ArticleGenerator:
   "content": "# タイトル\n\n本文（Markdown形式）...",
   "meta_description": "120文字以内のメタディスクリプション",
   "tags": ["タグ1", "タグ2", "タグ3", "タグ4", "タグ5"],
-  "slug": "url-friendly-slug"
+  "slug": "url-friendly-slug",
+  "hero_emoji": "記事テーマを象徴する絵文字1つ（例: 🚀）",
+  "hero_gradient": "CSSグラデーション方向キーワード（135deg, 45deg, 90deg, 180degのいずれか）"
 }}
 ```
 
 【注意事項】
 - content内のMarkdownは適切にエスケープしてJSON文字列として有効にすること
 - tagsは5個ちょうど生成すること
-- slugは半角英数字とハイフンのみ使用すること"""
+- slugは半角英数字とハイフンのみ使用すること
+- hero_emojiは記事の内容を最もよく表す絵文字を1つだけ選ぶこと
+- 各H2見出しには必ず絵文字を先頭に付けること"""
 
     @staticmethod
     def _fix_json_control_chars(text: str) -> str:
@@ -231,6 +244,9 @@ class ArticleGenerator:
                 ) from e2
 
         required_fields = ["title", "content", "meta_description", "tags", "slug"]
+        # hero_emoji/hero_gradientはオプション（デフォルト値あり）
+        article_data.setdefault("hero_emoji", "📝")
+        article_data.setdefault("hero_gradient", "135deg")
         missing = [f for f in required_fields if f not in article_data]
         if missing:
             raise ValueError(
