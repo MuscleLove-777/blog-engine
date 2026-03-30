@@ -214,12 +214,12 @@ class ArticleGenerator:
                     raw = cleaned
             # 制御文字を修正してからパース
             raw = self._fix_json_control_chars(raw)
-            article_data = json.loads(raw)
+            article_data = json.loads(raw, strict=False)
         except json.JSONDecodeError as e1:
             logger.warning("JSONパース初回失敗、修復を試行: %s", e1)
             try:
                 repaired = self._repair_json(response_text)
-                article_data = json.loads(repaired)
+                article_data = json.loads(repaired, strict=False)
                 logger.info("JSON修復に成功しました")
             except json.JSONDecodeError as e2:
                 logger.error(
