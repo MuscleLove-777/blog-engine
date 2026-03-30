@@ -36,7 +36,7 @@ class ArticleGenerator:
         logger.info("ArticleGenerator を初期化しました（モデル: %s）", config.GEMINI_MODEL)
 
     def generate_article(self, keyword: str, category: str, prompts=None) -> dict:
-        """キーワードとカテゴリからSEO最適化されたブログ記事を生成する（最大3回リトライ）"""
+        """キーワードとカテゴリからSEO最適化されたブログ記事を生成する（最大5回リトライ）"""
         logger.info("記事生成を開始: キーワード='%s', カテゴリ='%s'", keyword, category)
 
         if prompts and hasattr(prompts, 'build_article_prompt'):
@@ -44,13 +44,13 @@ class ArticleGenerator:
         else:
             prompt = self._build_default_prompt(keyword, category)
 
-        max_retries = 3
+        max_retries = 5
         last_error = None
         for attempt in range(1, max_retries + 1):
             try:
                 from google.genai import types
                 gen_config = types.GenerateContentConfig(
-                    max_output_tokens=16384,
+                    max_output_tokens=65536,
                     response_mime_type="application/json",
                 )
                 response = self.client.models.generate_content(
@@ -207,7 +207,81 @@ class ArticleGenerator:
             repaired += ']' * max(open_brackets, 0)
             repaired += '}' * max(open_braces, 0)
 
+        # 6. それでもパースできない場合、フィールド単位で抽出を試みる
+        try:
+            json.loads(repaired, strict=False)
+        except json.JSONDecodeError:
+            extracted = ArticleGenerator._extract_fields_fallback(repaired)
+            if extracted:
+                repaired = json.dumps(extracted, ensure_ascii=False)
+
         return repaired
+
+    @staticmethod
+    def _extract_fields_fallback(text: str) -> dict:
+        """JSONパースが完全に失敗した場合、正規表現でフィールドを個別抽出する"""
+        result = {}
+        # title
+        m = re.search(r'"title"\s*:\s*"((?:[^"\\]|\\.)*)"', text)
+        if m:
+            result["title"] = m.group(1).replace('\\"', '"')
+        # meta_description
+        m = re.search(r'"meta_description"\s*:\s*"((?:[^"\\]|\\.)*)"', text)
+        if m:
+            result["meta_description"] = m.group(1).replace('\\"', '"')
+        # slug
+        m = re.search(r'"slug"\s*:\s*"((?:[^"\\]|\\.)*)"', text)
+        if m:
+            result["slug"] = m.group(1).replace('\\"', '"')
+        # hero_emoji
+        m = re.search(r'"hero_emoji"\s*:\s*"((?:[^"\\]|\\.)*)"', text)
+        if m:
+            result["hero_emoji"] = m.group(1).replace('\\"', '"')
+        # hero_gradient
+        m = re.search(r'"hero_gradient"\s*:\s*"((?:[^"\\]|\\.)*)"', text)
+        if m:
+            result["hero_gradient"] = m.group(1).replace('\\"', '"')
+        # tags - 配列を抽出
+        m = re.search(r'"tags"\s*:\s*\[(.*?)\]', text, re.DOTALL)
+        if m:
+            tags_raw = m.group(1)
+            tags = re.findall(r'"((?:[^"\\]|\\.)*)"', tags_raw)
+            result["tags"] = tags
+        # faq - 配列を抽出
+        m = re.search(r'"faq"\s*:\s*\[(.+)\]', text, re.DOTALL)
+        if m:
+            faq_raw = m.group(1)
+            questions = re.findall(r'"question"\s*:\s*"((?:[^"\\]|\\.)*)"', faq_raw)
+            answers = re.findall(r'"answer"\s*:\s*"((?:[^"\\]|\\.)*)"', faq_raw)
+            result["faq"] = [
+                {"question": q.replace('\\"', '"'), "answer": a.replace('\\"', '"')}
+                for q, a in zip(questions, answers)
+            ]
+        # content - 最も長い文字列値をcontentとして扱う（最後の手段）
+        m = re.search(r'"content"\s*:\s*"', text)
+        if m:
+            # contentの開始位置から、次の有効なJSONキーまでを抽出
+            start_pos = m.end()
+            # 文字列終端を探す（エスケープされていない"を探す）
+            pos = start_pos
+            content_chars = []
+            while pos < len(text):
+                ch = text[pos]
+                if ch == '\\' and pos + 1 < len(text):
+                    content_chars.append(ch)
+                    content_chars.append(text[pos + 1])
+                    pos += 2
+                    continue
+                if ch == '"':
+                    break
+                content_chars.append(ch)
+                pos += 1
+            result["content"] = ''.join(content_chars).replace('\\"', '"').replace('\\n', '\n')
+
+        if result:
+            logger.warning("フォールバック抽出で%d個のフィールドを回収: %s",
+                          len(result), list(result.keys()))
+        return result
 
     def _parse_response(self, response_text: str) -> dict:
         json_match = re.search(
@@ -243,15 +317,44 @@ class ArticleGenerator:
                     f"APIレスポンスのJSONパースに失敗しました: {e2}"
                 ) from e2
 
-        required_fields = ["title", "content", "meta_description", "tags", "slug"]
-        # hero_emoji/hero_gradientはオプション（デフォルト値あり）
+        # 必須フィールドが欠落している場合はデフォルト値で補完
         article_data.setdefault("hero_emoji", "📝")
         article_data.setdefault("hero_gradient", "135deg")
-        missing = [f for f in required_fields if f not in article_data]
-        if missing:
+
+        # titleとcontentは最低限必要（これがないと記事として成立しない）
+        if "title" not in article_data and "content" not in article_data:
             raise ValueError(
-                f"APIレスポンスに必須フィールドが不足しています: {missing}"
+                "APIレスポンスにtitleとcontentの両方が不足しています"
             )
+
+        # 補完可能なフィールドにデフォルト値を設定
+        if "title" not in article_data:
+            # contentの先頭行からタイトルを抽出
+            content = article_data.get("content", "")
+            first_line = content.split("\n")[0].lstrip("# ").strip()
+            article_data["title"] = first_line or "無題の記事"
+            logger.warning("titleが欠落 → contentから補完: %s", article_data["title"])
+
+        if "content" not in article_data:
+            article_data["content"] = f"# {article_data['title']}\n\n記事の内容を生成できませんでした。"
+            logger.warning("contentが欠落 → デフォルト値を設定")
+
+        if "meta_description" not in article_data:
+            # contentの先頭120文字をメタディスクリプションとして使用
+            content_text = re.sub(r'[#*\[\]()]', '', article_data["content"])
+            article_data["meta_description"] = content_text[:120].strip()
+            logger.warning("meta_descriptionが欠落 → contentから自動生成")
+
+        if "tags" not in article_data:
+            article_data["tags"] = ["自動生成", "ブログ", "記事", "SEO", "最新"]
+            logger.warning("tagsが欠落 → デフォルト値を設定")
+
+        if "slug" not in article_data:
+            # タイトルからslugを生成（日本語はハイフンに変換）
+            slug = re.sub(r'[^a-zA-Z0-9\s-]', '', article_data["title"].lower())
+            slug = re.sub(r'\s+', '-', slug).strip('-') or "untitled-article"
+            article_data["slug"] = slug
+            logger.warning("slugが欠落 → タイトルから自動生成: %s", slug)
 
         if not isinstance(article_data["tags"], list):
             article_data["tags"] = [article_data["tags"]]
