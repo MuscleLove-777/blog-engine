@@ -20,10 +20,14 @@
     <meta property="og:url" content="{% block og_url %}{{ blog_url }}{% endblock %}">
     <meta property="og:locale" content="ja_JP">
 
+    {# OG Image #}
+    {% block og_image %}{% endblock %}
+
     {# Twitter Card #}
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="{% block twitter_title %}{{ blog_name }}{% endblock %}">
     <meta name="twitter:description" content="{% block twitter_description %}{{ blog_description }}{% endblock %}">
+    {% block twitter_image %}{% endblock %}
 
     {# RSS #}
     <link rel="alternate" type="application/rss+xml" title="{{ blog_name }}" href="{{ blog_url }}/feed.xml">
@@ -32,6 +36,17 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+JP:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    {# Google Analytics (GA4) #}
+    {% if google_analytics_id %}
+    <script async src="https://www.googletagmanager.com/gtag/js?id={{ google_analytics_id }}"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', '{{ google_analytics_id }}');
+    </script>
+    {% endif %}
 
     {# AdSense #}
     {% if adsense_enabled and adsense_client_id %}
@@ -557,6 +572,12 @@
                 radial-gradient(circle at 20% 50%, rgba(255,255,255,0.1) 0%, transparent 50%),
                 radial-gradient(circle at 80% 20%, rgba(255,255,255,0.08) 0%, transparent 40%),
                 radial-gradient(circle at 60% 80%, rgba(255,255,255,0.06) 0%, transparent 40%);
+            z-index: 1;
+        }
+        .article-hero-overlay {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.05) 0%, rgba(0,0,0,0.3) 100%);
             z-index: 1;
         }
 

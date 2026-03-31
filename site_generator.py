@@ -97,6 +97,8 @@ class SiteGenerator:
         self._generate_rss(articles)
         print("  RSSフィード生成: feed.xml")
 
+        self._generate_verification_files()
+
         print(f"[サイト生成] 完了 - {self.output_dir}")
 
     def _load_articles(self) -> list:
@@ -129,6 +131,9 @@ class SiteGenerator:
             "blog_url": config.BLOG_URL,
             "blog_language": getattr(config, "BLOG_LANGUAGE", "ja"),
             "theme": self.theme,
+            "google_analytics_id": getattr(config, "GOOGLE_ANALYTICS_ID", ""),
+            "adsense_enabled": getattr(config, "ADSENSE_ENABLED", False),
+            "adsense_client_id": getattr(config, "ADSENSE_CLIENT_ID", ""),
             "adsense_head": "",
             "adsense_article_ad": "",
         }
@@ -243,6 +248,14 @@ class SiteGenerator:
 
         lines.extend(["  </channel>", "</rss>"])
         (self.output_dir / "feed.xml").write_text("\n".join(lines), encoding="utf-8")
+
+    def _generate_verification_files(self):
+        """Google Search Console等の認証ファイルをサイトルートに出力"""
+        verification_files = getattr(self.config, "SITE_VERIFICATION_FILES", {})
+        for filename, content in verification_files.items():
+            filepath = self.output_dir / filename
+            filepath.write_text(content, encoding="utf-8")
+            print(f"  認証ファイル生成: {filename}")
 
     @staticmethod
     def _group_by_category(articles):

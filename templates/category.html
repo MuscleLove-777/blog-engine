@@ -27,7 +27,11 @@
         <div class="card-grid" style="margin-top:1.5rem;">
             {% for article in articles %}
             <article class="card">
+                {% if article.eyecatch_url %}
+                <div class="card-thumb" style="background: url('{{ article.eyecatch_url }}') center/cover no-repeat;"></div>
+                {% else %}
                 <div class="card-thumb"><span class="card-thumb-text">{{ category }}</span></div>
+                {% endif %}
                 <div class="card-body">
                     <h2 class="card-title"><a href="{{ blog_url }}/articles/{{ article.slug }}.html">{{ article.title }}</a></h2>
                     <div class="card-meta">

@@ -11,6 +11,11 @@
 {% block twitter_title %}{{ article.title }}{% endblock %}
 {% block twitter_description %}{{ article.description | default(article.title) }}{% endblock %}
 
+{% if article.eyecatch_url %}
+{% block og_image %}<meta property="og:image" content="{{ article.eyecatch_url }}">{% endblock %}
+{% block twitter_image %}<meta name="twitter:image" content="{{ article.eyecatch_url }}">{% endblock %}
+{% endif %}
+
 {% block json_ld %}
 <script type="application/ld+json">
 {
@@ -23,6 +28,7 @@
     "author": {"@type": "Organization", "name": "{{ blog_name }}"},
     "publisher": {"@type": "Organization", "name": "{{ blog_name }}"},
     "mainEntityOfPage": {"@type": "WebPage", "@id": "{{ blog_url }}/articles/{{ article.slug }}.html"}
+    {% if article.eyecatch_url %},"image": "{{ article.eyecatch_url }}"{% endif %}
     {% if article.tags %},"keywords": "{{ article.tags | join(', ') }}"{% endif %}
 }
 </script>
@@ -42,11 +48,17 @@
         </nav>
 
         <article>
-            {# ヒーロー画像（CSS生成・コスト0） #}
+            {# ヒーロー画像（アイキャッチ画像 or CSS生成） #}
+            {% if article.eyecatch_url %}
+            <div class="article-hero" style="background: url('{{ article.eyecatch_url }}') center/cover no-repeat;">
+                <div class="article-hero-overlay"></div>
+            </div>
+            {% else %}
             <div class="article-hero" style="background: linear-gradient({{ article.hero_gradient | default('135deg') }}, var(--color-primary), var(--color-accent));">
                 <span class="article-hero-emoji">{{ article.hero_emoji | default('📝') }}</span>
                 <div class="article-hero-pattern"></div>
             </div>
+            {% endif %}
 
             <header class="article-header">
                 <h1 class="article-title">{{ article.title }}</h1>
