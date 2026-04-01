@@ -6,6 +6,7 @@ Gemini APIを使って、ブログのジャンルに応じたトレンドキー�
 """
 import json
 import logging
+import time
 from datetime import datetime, timedelta
 
 from google import genai
@@ -33,11 +34,33 @@ class KeywordResearcher:
         logger.info("KeywordResearcher を初期化しました")
 
     def _call_ai(self, prompt: str, max_tokens: int = 2000) -> str:
-        """Gemini APIを呼び出して応答テキストを返す共通メソッド"""
-        response = self.client.models.generate_content(
-            model=self.model_name, contents=prompt
-        )
-        return response.text.strip()
+        """Gemini APIを呼び出して応答テキストを返す共通メソッド（レートリミット対応）"""
+        fallback_model = getattr(self.config, "GEMINI_FALLBACK_MODEL", "gemini-2.0-flash")
+        models_to_try = [self.model_name]
+        if fallback_model and fallback_model != self.model_name:
+            models_to_try.append(fallback_model)
+
+        for model_name in models_to_try:
+            for attempt in range(1, 4):
+                try:
+                    response = self.client.models.generate_content(
+                        model=model_name, contents=prompt
+                    )
+                    return response.text.strip()
+                except Exception as api_err:
+                    err_str = str(api_err)
+                    if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                        if attempt < 3:
+                            wait = 30 * attempt
+                            logger.warning("レートリミット検出（%s）、%d秒待機（試行%d/3）", model_name, wait, attempt)
+                            time.sleep(wait)
+                            continue
+                        else:
+                            logger.warning("モデル %s でレートリミット超過、次のモデルを試行", model_name)
+                            break
+                    raise
+
+        raise RuntimeError("全モデルでレートリミット超過。時間を置いて再実行してください。")
 
     def _parse_json_response(self, response_text: str):
         """AIレスポンスからJSONを抽出してパースする"""

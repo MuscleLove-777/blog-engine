@@ -53,24 +53,37 @@ def run(config, prompts=None):
                 '{"category": "カテゴリ名", "keyword": "キーワード"}'
             )
 
+        # レートリミット対策: プライマリモデルとフォールバックモデルを順番に試す
+        fallback_model = getattr(config, "GEMINI_FALLBACK_MODEL", "gemini-2.0-flash")
+        models_to_try = [config.GEMINI_MODEL]
+        if fallback_model and fallback_model != config.GEMINI_MODEL:
+            models_to_try.append(fallback_model)
+
         max_retries = 3
         response_text = None
-        for attempt in range(1, max_retries + 1):
-            try:
-                response = client.models.generate_content(
-                    model=config.GEMINI_MODEL, contents=prompt
-                )
-                response_text = response.text.strip()
+        for model_name in models_to_try:
+            for attempt in range(1, max_retries + 1):
+                try:
+                    logger.info("モデル %s でキーワード選定を試行（%d/%d）", model_name, attempt, max_retries)
+                    response = client.models.generate_content(
+                        model=model_name, contents=prompt
+                    )
+                    response_text = response.text.strip()
+                    break
+                except Exception as api_err:
+                    err_str = str(api_err)
+                    if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                        if attempt < max_retries:
+                            wait = 30 * attempt
+                            logger.warning("レートリミット検出（%s）、%d秒待機（試行%d/%d）", model_name, wait, attempt, max_retries)
+                            time.sleep(wait)
+                            continue
+                        else:
+                            logger.warning("モデル %s でレートリミット超過、次のモデルを試行", model_name)
+                            break
+                    raise
+            if response_text is not None:
                 break
-            except Exception as api_err:
-                err_str = str(api_err)
-                if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                    if attempt < max_retries:
-                        wait = 30 * attempt
-                        logger.warning("レートリミット検出、%d秒待機（試行%d/%d）", wait, attempt, max_retries)
-                        time.sleep(wait)
-                        continue
-                raise
 
         if response_text is None:
             raise RuntimeError("キーワード選定のAPI呼び出しに失敗しました")

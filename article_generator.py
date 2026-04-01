@@ -53,11 +53,42 @@ class ArticleGenerator:
                     max_output_tokens=65536,
                     response_mime_type="application/json",
                 )
-                response = self.client.models.generate_content(
-                    model=self.model_name, contents=prompt, config=gen_config
-                )
-                response_text = response.text
-                logger.debug("APIレスポンスを受信（%d文字）", len(response_text))
+                # レートリミット対策: フォールバックモデルも試す
+                fallback_model = getattr(self.config, "GEMINI_FALLBACK_MODEL", "gemini-2.0-flash")
+                models_to_try = [self.model_name]
+                if fallback_model and fallback_model != self.model_name:
+                    models_to_try.append(fallback_model)
+
+                api_success = False
+                for model_name in models_to_try:
+                    for api_attempt in range(1, 4):
+                        try:
+                            response = self.client.models.generate_content(
+                                model=model_name, contents=prompt, config=gen_config
+                            )
+                            response_text = response.text
+                            logger.debug("APIレスポンスを受信（%d文字、モデル: %s）", len(response_text), model_name)
+                            api_success = True
+                            break
+                        except Exception as api_err:
+                            err_str = str(api_err)
+                            if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                                if api_attempt < 3:
+                                    wait = 30 * api_attempt
+                                    logger.warning("レートリミット検出（%s）、%d秒待機（試行%d/3）", model_name, wait, api_attempt)
+                                    time.sleep(wait)
+                                    continue
+                                else:
+                                    logger.warning("モデル %s でレートリミット超過、次のモデルを試行", model_name)
+                                    break
+                            raise
+                    if api_success:
+                        break
+
+                if not api_success:
+                    raise RuntimeError("全モデルでレートリミット超過。時間を置いて再実行してください。")
+            except RuntimeError:
+                raise
             except Exception as e:
                 logger.error("Gemini API呼び出しに失敗: %s", e)
                 raise
