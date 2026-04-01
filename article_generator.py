@@ -54,7 +54,7 @@ class ArticleGenerator:
                     response_mime_type="application/json",
                 )
                 # レートリミット対策: フォールバックモデルも試す
-                fallback_model = getattr(self.config, "GEMINI_FALLBACK_MODEL", "gemini-2.0-flash")
+                fallback_model = getattr(self.config, "GEMINI_FALLBACK_MODEL", "gemini-2.5-flash-lite")
                 models_to_try = [self.model_name]
                 if fallback_model and fallback_model != self.model_name:
                     models_to_try.append(fallback_model)

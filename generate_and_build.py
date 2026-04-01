@@ -54,7 +54,7 @@ def run(config, prompts=None):
             )
 
         # レートリミット対策: プライマリモデルとフォールバックモデルを順番に試す
-        fallback_model = getattr(config, "GEMINI_FALLBACK_MODEL", "gemini-2.0-flash")
+        fallback_model = getattr(config, "GEMINI_FALLBACK_MODEL", "gemini-2.5-flash-lite")
         models_to_try = [config.GEMINI_MODEL]
         if fallback_model and fallback_model != config.GEMINI_MODEL:
             models_to_try.append(fallback_model)
