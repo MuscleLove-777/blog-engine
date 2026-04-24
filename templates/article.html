@@ -32,6 +32,25 @@
     {% if article.tags %},"keywords": "{{ article.tags | join(', ') }}"{% endif %}
 }
 </script>
+{% if faq_items %}
+<script type="application/ld+json">
+{
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+        {% for item in faq_items %}{
+            "@type": "Question",
+            "name": {{ item.question | tojson }},
+            "acceptedAnswer": {
+                "@type": "Answer",
+                "text": {{ item.answer | tojson }}
+            }
+        }{% if not loop.last %},{% endif %}
+        {% endfor %}
+    ]
+}
+</script>
+{% endif %}
 {% endblock %}
 
 {% block content %}

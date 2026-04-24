@@ -143,16 +143,98 @@ class SiteGenerator:
         html_content = self.md.convert(article.get("content", ""))
         toc = getattr(self.md, "toc", "")
 
+        faq_items = self._extract_faq(article.get("content", ""))
+
         context = self._get_common_context()
         context.update({
             "article": article,
             "content": html_content,
             "toc": toc,
             "related": article.get("related", []),
+            "faq_items": faq_items,
         })
 
         template = self.env.get_template("article.html")
         return template.render(**context)
+
+    @staticmethod
+    def _extract_faq(markdown_text: str) -> list:
+        """記事本文の Markdown から Q&A 形式の見出しを抽出して FAQ リストを返す。
+
+        対応パターン（H2/H3/H4 いずれも）:
+            ## Q1: 質問テキスト
+            ## Q. 質問テキスト
+            ## 質問: ...
+            ## Q：...（全角コロン）
+
+        質問見出しの直後から次の見出しまでのプレーンテキストを答えとして採用する。
+        質問が1件未満なら空リストを返し、テンプレート側で FAQPage schema を出力しない。
+        過剰スキーマ（無関係な質問でFAQ偽装）を避けるため、Q-prefix or "質問" を含む
+        見出しのみを対象にする。Googleペナルティリスク回避。
+        """
+        if not markdown_text:
+            return []
+
+        # 行ベース解析：見出し行を検出
+        lines = markdown_text.splitlines()
+        heading_re = re.compile(r"^(#{2,4})\s+(.+?)\s*$")
+        # Q1: / Q. / Q： / 質問: などを含む見出しを質問とみなす
+        question_re = re.compile(
+            r"^(?:[QqＱ][0-9]*\s*[.:：、)）]?\s*|質問\s*[:：]?\s*)(.+)$"
+        )
+
+        sections = []  # [(is_question, qtext_or_None, body_lines)]
+        cur_is_q = False
+        cur_qtext = None
+        cur_body = []
+
+        def flush():
+            if cur_is_q and cur_qtext:
+                sections.append((True, cur_qtext, list(cur_body)))
+
+        for line in lines:
+            m = heading_re.match(line)
+            if m:
+                # 直前のセクションを確定
+                flush()
+                heading_text = m.group(2).strip()
+                qm = question_re.match(heading_text)
+                if qm:
+                    cur_is_q = True
+                    cur_qtext = qm.group(1).strip()
+                    cur_body = []
+                else:
+                    cur_is_q = False
+                    cur_qtext = None
+                    cur_body = []
+            else:
+                if cur_is_q:
+                    cur_body.append(line)
+        flush()
+
+        faq = []
+        for _, q, body in sections:
+            # 本文を改行→空白で結合し、Markdown記号を簡易除去
+            text = "\n".join(body).strip()
+            if not text:
+                continue
+            # コードブロック・画像・リンクの装飾を最低限除去
+            text = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
+            text = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", text)
+            text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)
+            text = re.sub(r"^[\s>*\-]+", "", text, flags=re.MULTILINE)
+            text = re.sub(r"\n{2,}", "\n\n", text).strip()
+            # 長すぎる答えは800字でトリミング（schema.orgの実用範囲）
+            if len(text) > 800:
+                text = text[:800].rstrip() + "…"
+            if len(q) < 2 or len(text) < 10:
+                continue
+            faq.append({"question": q, "answer": text})
+
+        # 1問だけの場合はFAQと呼ぶには弱いのでスキップ（過剰スキーマ回避）
+        if len(faq) < 2:
+            return []
+        return faq
 
     def _render_index(self, page_articles, articles=None, current_page=1, total_pages=1):
         if articles is None:
