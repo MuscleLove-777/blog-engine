@@ -53,17 +53,53 @@
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client={{ adsense_client_id }}" crossorigin="anonymous"></script>
     {% endif %}
 
-    {# JSON-LD サイト情報 #}
+    {# JSON-LD サイト情報 (extended: WebSite + Organization + WebPage) #}
+    {# __BLOGENGINE_JSONLD_EXT__ - 拡張版マーカー #}
     {% block json_ld %}
+    {% if blog_url and 'pharmaworkerka' in blog_url %}
+    <!-- __PHARMA_JSONLD__START__ -->
+    {% endif %}
     <script type="application/ld+json">
     {
         "@context": "https://schema.org",
         "@type": "WebSite",
         "name": "{{ blog_name }}",
         "description": "{{ blog_description }}",
-        "url": "{{ blog_url }}"
+        "url": "{{ blog_url }}",
+        "inLanguage": "{{ blog_language | default('ja') }}",
+        "publisher": {
+            "@type": "Organization",
+            "name": "{{ blog_name }}",
+            "url": "{{ blog_url }}"
+        }
     }
     </script>
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "name": "{{ blog_name }}",
+        "url": "{{ blog_url }}",
+        "description": "{{ blog_description }}"
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "WebPage",
+        "name": "{% block webpage_name %}{{ blog_name }}{% endblock %}",
+        "description": "{% block webpage_description %}{{ blog_description }}{% endblock %}",
+        "url": "{% block webpage_url %}{{ blog_url }}{% endblock %}",
+        "inLanguage": "{{ blog_language | default('ja') }}",
+        "isPartOf": {
+            "@type": "WebSite",
+            "url": "{{ blog_url }}"
+        }
+    }
+    </script>
+    {% if blog_url and 'pharmaworkerka' in blog_url %}
+    <!-- __PHARMA_JSONLD__END__ -->
+    {% endif %}
     {% endblock %}
 
     <style>
