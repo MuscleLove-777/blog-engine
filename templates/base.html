@@ -649,6 +649,57 @@
             font-weight: 700;
             font-size: 0.85rem;
         }
+        /* ===== MuscleLove Promo Card ===== */
+        .promo-musclelove { padding: 30px 0 10px; }
+        .promo-musclelove .promo-card {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            padding: 22px 24px;
+            border-radius: 14px;
+            background: linear-gradient(135deg, #FFF7E6 0%, #FFE9B0 100%);
+            border: 1.5px solid #F5C842;
+            box-shadow: 0 6px 24px rgba(27, 67, 50, 0.08);
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        .promo-musclelove .promo-icon { font-size: 2.4rem; line-height: 1; flex-shrink: 0; }
+        .promo-musclelove .promo-body { flex: 1; min-width: 0; }
+        .promo-musclelove .promo-eyebrow {
+            font-size: 0.7rem;
+            font-weight: 800;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            color: #8B6B1C;
+            margin-bottom: 4px;
+        }
+        .promo-musclelove .promo-body h3 { font-size: 1.08rem; font-weight: 900; color: #1B4332; margin-bottom: 4px; }
+        .promo-musclelove .promo-body p { font-size: 0.88rem; color: #44533E; line-height: 1.55; }
+        .promo-musclelove .promo-cta { display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
+        .promo-musclelove .btn-promo {
+            display: inline-block;
+            padding: 9px 18px;
+            border-radius: 999px;
+            background: #1B4332;
+            color: #F5C842 !important;
+            font-weight: 800;
+            font-size: 0.85rem;
+            white-space: nowrap;
+            text-align: center;
+            transition: transform 0.2s;
+            text-decoration: none;
+        }
+        .promo-musclelove .btn-promo:hover { transform: translateY(-1px); opacity: 1; }
+        .promo-musclelove .btn-promo.outline {
+            background: transparent;
+            border: 1.5px solid #1B4332;
+            color: #1B4332 !important;
+        }
+        @media (max-width: 640px) {
+            .promo-musclelove .promo-card { flex-direction: column; align-items: flex-start; text-align: left; }
+            .promo-musclelove .promo-cta { flex-direction: row; flex-wrap: wrap; width: 100%; }
+            .promo-musclelove .btn-promo { flex: 1; }
+        }
     </style>
 </head>
 <body>
@@ -707,6 +758,24 @@
                 <a href="https://www.patreon.com/MuscleLove" target="_blank" rel="noopener" style="display:inline-block;padding:10px 18px;border-radius:999px;background:linear-gradient(135deg,#ff424d,#ff6b35);color:#fff;text-decoration:none;font-weight:600;font-size:0.88rem;">💪 Patreon</a>
             </div>
         </div>
+    </section>
+
+    {# ===== MuscleLove Promo Card ===== #}
+    <section class="promo-musclelove">
+      <div class="container">
+        <div class="promo-card">
+          <div class="promo-icon">💪</div>
+          <div class="promo-body">
+            <div class="promo-eyebrow">PR · 運営メディア / Sponsored</div>
+            <h3>MuscleLove — Muscle Girls &amp; Fitness Media Hub</h3>
+            <p>格闘女子・フィジーク・アームレスリング・筋トレ飯など、40+サイトを展開するMuscleLoveも運営中。X &amp; Patreonで限定コンテンツ配信中 / We also run MuscleLove, a 40+ site fitness network.</p>
+          </div>
+          <div class="promo-cta">
+            <a class="btn-promo" href="https://x.com/MuscleGirlLove7" target="_blank" rel="noopener">X @MuscleGirlLove7</a>
+            <a class="btn-promo outline" href="https://www.patreon.com/MuscleLove" target="_blank" rel="noopener">Patreon</a>
+          </div>
+        </div>
+      </div>
     </section>
 
     {# ===== フッター ===== #}
