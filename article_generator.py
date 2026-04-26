@@ -11,23 +11,17 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from google import genai
+from blog_engine.llm import get_llm_client
 
 logger = logging.getLogger(__name__)
 
 
 class ArticleGenerator:
-    """Gemini APIを使ったブログ記事生成エンジン"""
+    """ブログ記事生成エンジン（Gemini / Claude Code CLI を LLM_BACKEND で切替）"""
 
     def __init__(self, config) -> None:
-        if not config.GEMINI_API_KEY:
-            raise ValueError(
-                "GEMINI_API_KEY が設定されていません。"
-                "環境変数 GEMINI_API_KEY を設定してください。"
-            )
-
         self.config = config
-        self.client = genai.Client(api_key=config.GEMINI_API_KEY)
+        self.client = get_llm_client(config)
         self.model_name = config.GEMINI_MODEL
 
         self.articles_dir = Path(config.BASE_DIR) / "output" / "articles"
@@ -48,11 +42,14 @@ class ArticleGenerator:
         last_error = None
         for attempt in range(1, max_retries + 1):
             try:
-                from google.genai import types
-                gen_config = types.GenerateContentConfig(
-                    max_output_tokens=65536,
-                    response_mime_type="application/json",
-                )
+                try:
+                    from google.genai import types
+                    gen_config = types.GenerateContentConfig(
+                        max_output_tokens=65536,
+                        response_mime_type="application/json",
+                    )
+                except ImportError:
+                    gen_config = None  # Claude shim 経由など google-genai 不在時
                 # レートリミット対策: フォールバックモデルも試す
                 fallback_model = getattr(self.config, "GEMINI_FALLBACK_MODEL", "gemini-2.5-flash-lite")
                 models_to_try = [self.model_name]

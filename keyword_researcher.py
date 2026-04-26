@@ -9,27 +9,18 @@ import logging
 import time
 from datetime import datetime, timedelta
 
-from google import genai
+from blog_engine.llm import get_llm_client
 
 logger = logging.getLogger(__name__)
 
 
 class KeywordResearcher:
-    """汎用キーワードリサーチャー
-
-    config と prompts を注入することで、任意のジャンルに対応する。
-    """
+    """汎用キーワードリサーチャー（Gemini / Claude CLI を LLM_BACKEND で切替）"""
 
     def __init__(self, config, prompts=None):
-        """Geminiクライアントを初期化する
-
-        Args:
-            config: ブログ設定モジュール
-            prompts: プロンプト設定モジュール（省略可）
-        """
         self.config = config
         self.prompts = prompts
-        self.client = genai.Client(api_key=config.GEMINI_API_KEY)
+        self.client = get_llm_client(config)
         self.model_name = config.GEMINI_MODEL
         logger.info("KeywordResearcher を初期化しました")
 

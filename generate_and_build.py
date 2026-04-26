@@ -29,13 +29,9 @@ def run(config, prompts=None):
     # ステップ1: キーワード選定
     logger.info("ステップ1: キーワード選定")
     try:
-        from google import genai
+        from blog_engine.llm import get_llm_client
 
-        if not config.GEMINI_API_KEY:
-            logger.error("GEMINI_API_KEY が設定されていません")
-            sys.exit(1)
-
-        client = genai.Client(api_key=config.GEMINI_API_KEY)
+        client = get_llm_client(config)
 
         categories_text = "\n".join(f"- {cat}" for cat in config.TARGET_CATEGORIES)
 
