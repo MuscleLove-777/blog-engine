@@ -9,6 +9,8 @@ import sys
 import time
 from datetime import datetime
 
+from blog_engine.llm import get_llm_client
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -26,80 +28,25 @@ def run(config, prompts=None):
     logger.info("=== %s 自動生成開始 ===", config.BLOG_NAME)
     start_time = datetime.now()
 
-    # ステップ1: キーワード選定
-    logger.info("ステップ1: キーワード選定")
+    # ステップ1: キーワード選定（topic_collector経由で topics.json から）
+    # 旧実装は Gemini に毎日「カテゴリ＋キーワード選んで」と頼んでたが、
+    # Gemini がプロンプト例の例キーワードをオウム返しして同一記事量産が発生。
+    # topic_collector.get_next_topic() で topics.json の優先度順に確実に順送りする。
+    # 各ブログのCWDに topic_collector.py と topics.json が存在することが前提。
+    logger.info("ステップ1: キーワード選定（topics.json）")
+    tc = None
     try:
-        from blog_engine.llm import get_llm_client
-
-        client = get_llm_client(config)
-
-        categories_text = "\n".join(f"- {cat}" for cat in config.TARGET_CATEGORIES)
-
-        # プロンプトモジュールにキーワード選定プロンプトがあればそれを使う
-        if prompts and hasattr(prompts, "build_keyword_prompt"):
-            prompt = prompts.build_keyword_prompt(config)
-        else:
-            prompt = (
-                f"{config.BLOG_NAME}用のキーワードを選定してください。\n\n"
-                "以下のカテゴリから1つ選び、そのカテゴリで今注目されている"
-                "トピック・キーワードを1つ提案してください。\n\n"
-                f"カテゴリ一覧:\n{categories_text}\n\n"
-                "検索ボリュームの高いキーワードを意識してください。\n\n"
-                "以下の形式でJSON形式のみで回答してください（説明不要）:\n"
-                '{"category": "カテゴリ名", "keyword": "キーワード"}'
-            )
-
-        # レートリミット対策: プライマリモデルとフォールバックモデルを順番に試す
-        fallback_model = getattr(config, "GEMINI_FALLBACK_MODEL", "gemini-2.5-flash-lite")
-        models_to_try = [config.GEMINI_MODEL]
-        if fallback_model and fallback_model != config.GEMINI_MODEL:
-            models_to_try.append(fallback_model)
-
-        max_retries = 3
-        response_text = None
-        for model_name in models_to_try:
-            for attempt in range(1, max_retries + 1):
-                try:
-                    logger.info("モデル %s でキーワード選定を試行（%d/%d）", model_name, attempt, max_retries)
-                    response = client.models.generate_content(
-                        model=model_name, contents=prompt
-                    )
-                    response_text = response.text.strip()
-                    break
-                except Exception as api_err:
-                    err_str = str(api_err)
-                    if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                        if attempt < max_retries:
-                            wait = 30 * attempt
-                            logger.warning("レートリミット検出（%s）、%d秒待機（試行%d/%d）", model_name, wait, attempt, max_retries)
-                            time.sleep(wait)
-                            continue
-                        else:
-                            logger.warning("モデル %s でレートリミット超過、次のモデルを試行", model_name)
-                            break
-                    raise
-            if response_text is not None:
-                break
-
-        if response_text is None:
-            raise RuntimeError("キーワード選定のAPI呼び出しに失敗しました")
-
-        if "```" in response_text:
-            response_text = response_text.split("```")[1]
-            if response_text.startswith("json"):
-                response_text = response_text[4:]
-            response_text = response_text.strip()
-
-        data = json.loads(response_text)
-        # Geminiがリストで返す場合があるので先頭要素を取得
-        if isinstance(data, list):
-            data = data[0]
-        category = data["category"]
-        keyword = data["keyword"]
-        logger.info(f"選定結果 - カテゴリ: {category}, キーワード: {keyword}")
-
+        from topic_collector import TopicCollector
+        tc = TopicCollector(config)
+        category, keyword = tc.get_next_topic()
+        if not category or not keyword:
+            logger.error("topics.json に未処理(pending)のトピックがありません。topics.json を補充してください。")
+            sys.exit(1)
+        logger.info("選定結果 - カテゴリ: %s, キーワード: %s", category, keyword)
+    except SystemExit:
+        raise
     except Exception as e:
-        logger.error(f"キーワード選定に失敗: {e}")
+        logger.error("キーワード選定に失敗: %s", e)
         sys.exit(1)
 
     # ステップ2: 記事生成
@@ -132,6 +79,40 @@ def run(config, prompts=None):
     except Exception as aff_err:
         logger.warning(f"アフィリエイトリンク挿入をスキップ: {aff_err}")
 
+    # ステップ2.6: コンテンツ画像挿入
+    logger.info("ステップ2.6: コンテンツ画像挿入")
+    try:
+        from blog_engine.content_image_fetcher import ContentImageFetcher
+        content_fetcher = ContentImageFetcher(config)
+        article = content_fetcher.fetch_and_inject(article)
+        logger.info(f"コンテンツ画像: {article.get('content_image_count', 0)}枚挿入")
+        # 記事JSONファイルを更新
+        if article.get("file_path"):
+            import json as _json2
+            with open(article["file_path"], "w", encoding="utf-8") as _f2:
+                _json2.dump(article, _f2, ensure_ascii=False, indent=2)
+    except Exception as cimg_err:
+        logger.warning(f"コンテンツ画像挿入をスキップ: {cimg_err}")
+
+    # ステップ2.7: アイキャッチ画像取得
+    logger.info("ステップ2.7: アイキャッチ画像取得")
+    try:
+        from blog_engine.image_fetcher import ImageFetcher
+        fetcher = ImageFetcher(config)
+        eyecatch_url = fetcher.fetch_eyecatch(article)
+        if eyecatch_url:
+            article["eyecatch_url"] = eyecatch_url
+            # 記事JSONファイルを更新
+            if article.get("file_path"):
+                import json as _json
+                with open(article["file_path"], "w", encoding="utf-8") as _f:
+                    _json.dump(article, _f, ensure_ascii=False, indent=2)
+            logger.info("アイキャッチ画像: %s", eyecatch_url)
+        else:
+            logger.info("アイキャッチ画像: CSSグラデーションを使用")
+    except Exception as img_err:
+        logger.warning("画像取得スキップ: %s", img_err)
+
     # ステップ3: サイトビルド
     logger.info("ステップ3: サイトビルド")
     try:
@@ -142,6 +123,14 @@ def run(config, prompts=None):
     except Exception as e:
         logger.error(f"サイトビルドに失敗: {e}")
         sys.exit(1)
+
+    # ステップ4: トピックを done にして topics.json を更新（次回の重複防止）
+    if tc is not None:
+        try:
+            tc.mark_as_done(category, keyword)
+            logger.info("トピックを done に更新: [%s] %s", category, keyword)
+        except Exception as e:
+            logger.warning("topics.json の更新をスキップ: %s", e)
 
     # 完了
     duration = (datetime.now() - start_time).total_seconds()

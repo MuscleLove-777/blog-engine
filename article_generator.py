@@ -30,7 +30,7 @@ class ArticleGenerator:
         logger.info("ArticleGenerator を初期化しました（モデル: %s）", config.GEMINI_MODEL)
 
     def generate_article(self, keyword: str, category: str, prompts=None) -> dict:
-        """キーワードとカテゴリからSEO最適化されたブログ記事を生成する（最大5回リトライ）"""
+        """キーワードとカテゴリからSEO最適化されたブログ記事を生成する（最大3回リトライ、エクスポーネンシャルバックオフ）"""
         logger.info("記事生成を開始: キーワード='%s', カテゴリ='%s'", keyword, category)
 
         if prompts and hasattr(prompts, 'build_article_prompt'):
@@ -38,7 +38,8 @@ class ArticleGenerator:
         else:
             prompt = self._build_default_prompt(keyword, category)
 
-        max_retries = 5
+        max_retries = 3
+        base_delay = 2
         last_error = None
         for attempt in range(1, max_retries + 1):
             try:
@@ -96,8 +97,9 @@ class ArticleGenerator:
             except (json.JSONDecodeError, ValueError) as e:
                 last_error = e
                 if attempt < max_retries:
-                    logger.warning("JSONパース失敗（試行%d/%d）、リトライします: %s", attempt, max_retries, e)
-                    time.sleep(2 * attempt)
+                    wait = base_delay * (2 ** (attempt - 1))
+                    logger.warning("JSONパース失敗（試行%d/%d）、%d秒後にリトライします: %s", attempt, max_retries, wait, e)
+                    time.sleep(wait)
                 else:
                     logger.error("JSONパースに失敗: %s", e)
                     raise ValueError(f"JSONパースに失敗: {e}") from e
@@ -144,6 +146,10 @@ class ArticleGenerator:
   - > ✅ **まとめ**: 〜
 - 本文中に比較表やステップ表をMarkdownテーブルで積極的に使うこと
 - 箇条書きだけでなく、番号付きリストも適宜使い分けること
+- 本文中の各H2セクションの間に画像プレースホルダー「{{{{content_image}}}}」を挿入すること（合計3〜5箇所）
+  - 例: セクション間に `{{{{content_image}}}}` を単独行で配置
+  - プレースホルダーは見出しの直前に配置すること
+  - 画像は自動的に実際のコンテンツ画像に置換されます
 
 【出力形式】
 以下のJSON形式で出力してください。JSONブロック以外のテキストは出力しないでください。
@@ -156,7 +162,9 @@ class ArticleGenerator:
   "tags": ["タグ1", "タグ2", "タグ3", "タグ4", "タグ5"],
   "slug": "url-friendly-slug",
   "hero_emoji": "記事テーマを象徴する絵文字1つ（例: 🚀）",
-  "hero_gradient": "CSSグラデーション方向キーワード（135deg, 45deg, 90deg, 180degのいずれか）"
+  "hero_gradient": "CSSグラデーション方向キーワード（135deg, 45deg, 90deg, 180degのいずれか）",
+  "image_search_query": "記事内容を象徴する英語の画像検索キーワード（2-3語、例: artificial intelligence robot）",
+  "content_image_count": "本文中に配置した{{{{content_image}}}}プレースホルダーの数（3〜5）"
 }}
 ```
 
@@ -165,7 +173,8 @@ class ArticleGenerator:
 - tagsは5個ちょうど生成すること
 - slugは半角英数字とハイフンのみ使用すること
 - hero_emojiは記事の内容を最もよく表す絵文字を1つだけ選ぶこと
-- 各H2見出しには必ず絵文字を先頭に付けること"""
+- 各H2見出しには必ず絵文字を先頭に付けること
+- image_search_queryは記事のテーマを表す英語の画像検索キーワードを2〜3語で指定すること"""
 
     @staticmethod
     def _fix_json_control_chars(text: str) -> str:
@@ -348,6 +357,7 @@ class ArticleGenerator:
         # 必須フィールドが欠落している場合はデフォルト値で補完
         article_data.setdefault("hero_emoji", "📝")
         article_data.setdefault("hero_gradient", "135deg")
+        article_data.setdefault("image_search_query", "")
 
         # titleとcontentは最低限必要（これがないと記事として成立しない）
         if "title" not in article_data and "content" not in article_data:

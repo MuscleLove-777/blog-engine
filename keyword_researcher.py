@@ -4,14 +4,79 @@ Gemini APIを使って、ブログのジャンルに応じたトレンドキー�
 ロングテール分析・競合分析・コンテンツカレンダー生成を行う。
 プロンプトは外部から注入可能。
 """
+import hashlib
 import json
 import logging
 import time
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from blog_engine.llm import get_llm_client
 
 logger = logging.getLogger(__name__)
+
+
+class _KeywordCache:
+    """キーワードリサーチ結果の24時間キャッシュ
+
+    キャッシュはJSON形式でファイルに保存され、24時間で自動的に無効化される。
+    """
+
+    CACHE_TTL_HOURS = 24
+
+    def __init__(self, cache_dir: str | None = None):
+        self._cache_dir = Path(cache_dir) if cache_dir else Path.home() / ".cache" / "blog_engine"
+        self._cache_dir.mkdir(parents=True, exist_ok=True)
+        self._cache_file = self._cache_dir / "keyword_cache.json"
+        self._cache: dict = self._load()
+
+    def _load(self) -> dict:
+        """キャッシュファイルを読み込む"""
+        if self._cache_file.exists():
+            try:
+                with open(self._cache_file, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, OSError):
+                logger.warning("キャッシュファイルの読み込みに失敗。新規作成します")
+        return {}
+
+    def _save(self):
+        """キャッシュをファイルに書き出す"""
+        try:
+            with open(self._cache_file, "w", encoding="utf-8") as f:
+                json.dump(self._cache, f, ensure_ascii=False, indent=2)
+        except OSError as e:
+            logger.warning("キャッシュ保存失敗: %s", e)
+
+    @staticmethod
+    def _make_key(method: str, *args) -> str:
+        """メソッド名と引数からキャッシュキーを生成する"""
+        raw = json.dumps({"m": method, "a": args}, ensure_ascii=False, sort_keys=True)
+        return hashlib.sha256(raw.encode()).hexdigest()
+
+    def get(self, method: str, *args):
+        """キャッシュから取得する。期限切れまたは存在しない場合は None"""
+        key = self._make_key(method, *args)
+        entry = self._cache.get(key)
+        if entry is None:
+            return None
+        cached_at = datetime.fromisoformat(entry["cached_at"])
+        if datetime.now() - cached_at > timedelta(hours=self.CACHE_TTL_HOURS):
+            del self._cache[key]
+            self._save()
+            logger.debug("キャッシュ期限切れ: %s(%s)", method, args)
+            return None
+        logger.info("キャッシュヒット: %s(%s)", method, args)
+        return entry["data"]
+
+    def set(self, data, method: str, *args):
+        """キャッシュに保存する"""
+        key = self._make_key(method, *args)
+        self._cache[key] = {
+            "cached_at": datetime.now().isoformat(),
+            "data": data,
+        }
+        self._save()
 
 
 class KeywordResearcher:
@@ -22,6 +87,7 @@ class KeywordResearcher:
         self.prompts = prompts
         self.client = get_llm_client(config)
         self.model_name = config.GEMINI_MODEL
+        self._cache = _KeywordCache(cache_dir)
         logger.info("KeywordResearcher を初期化しました")
 
     def _call_ai(self, prompt: str, max_tokens: int = 2000) -> str:
@@ -81,6 +147,10 @@ class KeywordResearcher:
         Returns:
             list[dict]: 各キーワードの情報を含むリスト
         """
+        cached = self._cache.get("research_trending_keywords", category, count)
+        if cached is not None:
+            return cached
+
         logger.info("トレンドキーワードをリサーチ中: カテゴリ=%s, 件数=%d", category, count)
 
         blog_name = self.config.BLOG_NAME
@@ -102,10 +172,15 @@ class KeywordResearcher:
         response = self._call_ai(prompt)
         keywords = self._parse_json_response(response)
         logger.info("%d件のキーワードを取得しました", len(keywords))
+        self._cache.set(keywords, "research_trending_keywords", category, count)
         return keywords
 
     def suggest_long_tail_keywords(self, base_keyword: str) -> list[str]:
         """ベースキーワードからロングテールキーワードを提案する"""
+        cached = self._cache.get("suggest_long_tail_keywords", base_keyword)
+        if cached is not None:
+            return cached
+
         logger.info("ロングテールキーワードを提案中: %s", base_keyword)
 
         blog_desc = self.config.BLOG_DESCRIPTION
@@ -121,10 +196,15 @@ class KeywordResearcher:
         response = self._call_ai(prompt)
         keywords = self._parse_json_response(response)
         logger.info("%d件のロングテールキーワードを取得しました", len(keywords))
+        self._cache.set(keywords, "suggest_long_tail_keywords", base_keyword)
         return keywords
 
     def analyze_competition(self, keyword: str) -> dict:
         """指定キーワードの競合分析をAIで行う"""
+        cached = self._cache.get("analyze_competition", keyword)
+        if cached is not None:
+            return cached
+
         logger.info("競合分析を実行中: %s", keyword)
 
         prompt = (
@@ -144,10 +224,111 @@ class KeywordResearcher:
         response = self._call_ai(prompt)
         analysis = self._parse_json_response(response)
         logger.info("競合分析完了: 難易度=%s", analysis.get("difficulty", "不明"))
+        self._cache.set(analysis, "analyze_competition", keyword)
         return analysis
+
+    def research_keywords_comprehensive(
+        self, category: str, count: int = 10
+    ) -> dict:
+        """トレンドキーワード提案・ロングテール・競合分析を1回のAPI呼出で統合実行する
+
+        従来 research_trending_keywords, suggest_long_tail_keywords,
+        analyze_competition を個別に呼ぶと3回のAPI呼出が必要だったが、
+        このメソッドは1回のAPI呼出で全てをまとめて取得する。
+
+        Args:
+            category: 対象カテゴリ
+            count: 提案するトレンドキーワード数
+
+        Returns:
+            dict: {
+                "trending_keywords": [...],    # トレンドキーワード一覧
+                "long_tail_keywords": {...},    # 各キーワードのロングテール候補
+                "competition_analysis": {...},  # 各キーワードの競合分析
+            }
+        """
+        cached = self._cache.get("research_keywords_comprehensive", category, count)
+        if cached is not None:
+            return cached
+
+        logger.info(
+            "キーワード統合リサーチ開始: カテゴリ=%s, 件数=%d（API 1回で実行）",
+            category, count,
+        )
+
+        blog_name = self.config.BLOG_NAME
+        blog_desc = self.config.BLOG_DESCRIPTION
+        extra = self._get_extra_prompt()
+
+        prompt = (
+            f"「{blog_name}」というブログの「{category}」カテゴリについて、"
+            f"以下の3つの分析をまとめて行ってください。\n\n"
+        )
+        if extra:
+            prompt += f"{extra}\n\n"
+        prompt += (
+            f"## 1. トレンドキーワード提案\n"
+            f"現在トレンドになっているブログ記事キーワードを{count}個提案してください。\n"
+            "各キーワードに keyword, volume（高/中/低）, competition（高/中/低）, "
+            "article_type を含めてください。\n\n"
+            f"## 2. ロングテールキーワード\n"
+            f"上記で提案した各キーワードに対し、「{blog_desc}」向けブログで狙える"
+            "ロングテールキーワードをそれぞれ5個提案してください。\n\n"
+            f"## 3. 競合分析\n"
+            "上記の各キーワードについて、difficulty（1-10）, top_content_types, "
+            "recommended_word_count, key_topics, differentiation_tips を分析してください。\n\n"
+            "以下のJSON形式のみで回答してください（説明不要）:\n"
+            "{\n"
+            '  "trending_keywords": [\n'
+            '    {"keyword": "...", "volume": "...", "competition": "...", "article_type": "..."}\n'
+            "  ],\n"
+            '  "long_tail_keywords": {\n'
+            '    "キーワード名": ["ロングテール1", "ロングテール2", ...]\n'
+            "  },\n"
+            '  "competition_analysis": {\n'
+            '    "キーワード名": {\n'
+            '      "difficulty": 数値,\n'
+            '      "top_content_types": ["..."],\n'
+            '      "recommended_word_count": 数値,\n'
+            '      "key_topics": ["..."],\n'
+            '      "differentiation_tips": ["..."]\n'
+            "    }\n"
+            "  }\n"
+            "}"
+        )
+
+        response = self._call_ai(prompt, max_tokens=4000)
+        result = self._parse_json_response(response)
+
+        # 統合結果の各部分を個別メソッドのキャッシュにも保存する
+        if "trending_keywords" in result:
+            self._cache.set(
+                result["trending_keywords"],
+                "research_trending_keywords", category, count,
+            )
+        if "long_tail_keywords" in result:
+            for kw, lt_list in result["long_tail_keywords"].items():
+                self._cache.set(lt_list, "suggest_long_tail_keywords", kw)
+        if "competition_analysis" in result:
+            for kw, analysis in result["competition_analysis"].items():
+                analysis["keyword"] = kw
+                self._cache.set(analysis, "analyze_competition", kw)
+
+        self._cache.set(result, "research_keywords_comprehensive", category, count)
+        logger.info(
+            "キーワード統合リサーチ完了: トレンド%d件, ロングテール%d件, 競合分析%d件",
+            len(result.get("trending_keywords", [])),
+            len(result.get("long_tail_keywords", {})),
+            len(result.get("competition_analysis", {})),
+        )
+        return result
 
     def get_content_calendar(self, days: int = 7) -> list[dict]:
         """指定日数分のコンテンツカレンダーを生成する"""
+        cached = self._cache.get("get_content_calendar", days)
+        if cached is not None:
+            return cached
+
         logger.info("コンテンツカレンダーを生成中: %d日分", days)
 
         start_date = datetime.now()
@@ -176,4 +357,5 @@ class KeywordResearcher:
         response = self._call_ai(prompt, max_tokens=3000)
         calendar = self._parse_json_response(response)
         logger.info("コンテンツカレンダー生成完了: %d件", len(calendar))
+        self._cache.set(calendar, "get_content_calendar", days)
         return calendar

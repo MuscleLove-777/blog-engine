@@ -17,19 +17,31 @@
 {% endif %}
 
 {% block json_ld %}
+<!-- __BLOGPOSTING_AUTO__ start (blog_engine: BlogPosting JSON-LD auto-injected, idempotent) -->
 <script type="application/ld+json">
 {
     "@context": "https://schema.org",
     "@type": "BlogPosting",
-    "headline": "{{ article.title }}",
-    "description": "{{ article.description | default(article.title) }}",
-    "datePublished": "{{ article.date | default('') }}",
-    "dateModified": "{{ article.date | default('') }}",
-    "author": {"@type": "Organization", "name": "{{ blog_name }}"},
-    "publisher": {"@type": "Organization", "name": "{{ blog_name }}"},
-    "mainEntityOfPage": {"@type": "WebPage", "@id": "{{ blog_url }}/articles/{{ article.slug }}.html"}
-    {% if article.eyecatch_url %},"image": "{{ article.eyecatch_url }}"{% endif %}
-    {% if article.tags %},"keywords": "{{ article.tags | join(', ') }}"{% endif %}
+    "mainEntityOfPage": {
+        "@type": "WebPage",
+        "@id": {{ (blog_url ~ '/articles/' ~ article.slug ~ '.html') | tojson }}
+    },
+    "headline": {{ article.title | tojson }},
+    "description": {{ (article.description or article.meta_description or article.title) | tojson }},
+    "datePublished": {{ (article.date_published or article.date or '') | tojson }},
+    "dateModified": {{ (article.date_modified or article.updated or article.date or '') | tojson }},
+    {% set _img = article.eyecatch_url or article.cover_image or article.image or '' %}
+    {% if _img %}"image": {{ _img | tojson }},{% endif %}
+    "author": {
+        "@type": "Person",
+        "name": {{ blog_name | tojson }}
+    },
+    "publisher": {
+        "@type": "Organization",
+        "name": {{ blog_name | tojson }},
+        "url": {{ blog_url | tojson }}
+    }{% if article.tags %},
+    "keywords": {{ article.tags | tojson }}{% endif %}
 }
 </script>
 {% if faq_items %}
@@ -126,7 +138,11 @@
             <div class="card-grid">
                 {% for rel in related %}
                 <article class="card">
+                    {% if rel.eyecatch_url %}
+                    <div class="card-thumb" style="background: url('{{ rel.eyecatch_url }}') center/cover no-repeat;"></div>
+                    {% else %}
                     <div class="card-thumb"><span class="card-thumb-text">{{ rel.category | default('Blog') }}</span></div>
+                    {% endif %}
                     <div class="card-body">
                         <h3 class="card-title"><a href="{{ blog_url }}/articles/{{ rel.slug }}.html">{{ rel.title }}</a></h3>
                         <div class="card-meta"><span>{{ rel.date }}</span>{% if rel.category %}<span class="category-badge">{{ rel.category }}</span>{% endif %}</div>
