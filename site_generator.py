@@ -215,16 +215,31 @@ class SiteGenerator:
         過剰スキーマ（無関係な質問でFAQ偽装）を避けるため、Q-prefix or "質問" を含む
         見出しのみを対象にする。Googleペナルティリスク回避。
         """
-        if not markdown_text:
+        # FAQ schemaだけを省略し、通常の記事本文の生成は妨げない。
+        if not markdown_text or len(markdown_text) > 1_000_000:
             return []
 
         # 行ベース解析：見出し行を検出
         lines = markdown_text.splitlines()
-        heading_re = re.compile(r"^(#{2,4})\s+(.+?)\s*$")
+        heading_re = re.compile(r"^(#{2,4})[^\S\n]+(\S.*)$")
         # Q1: / Q. / Q： / 質問: などを含む見出しを質問とみなす
-        question_re = re.compile(
-            r"^(?:[QqＱ][0-9]*\s*[.:：、)）]?\s*|質問\s*[:：]?\s*)(.+)$"
-        )
+        def question_text(value):
+            if value.startswith(("Q", "q", "Ｑ")):
+                pos = 1
+                while pos < len(value) and value[pos] in "0123456789":
+                    pos += 1
+                punctuation = ".:：、)）"
+            elif value.startswith("質問"):
+                pos = 2
+                punctuation = ":："
+            else:
+                return None
+            while pos < len(value) and value[pos].isspace():
+                pos += 1
+            if pos < len(value) and value[pos] in punctuation:
+                pos += 1
+            return value[pos:].strip() or None
+
 
         sections = []  # [(is_question, qtext_or_None, body_lines)]
         cur_is_q = False
@@ -241,10 +256,10 @@ class SiteGenerator:
                 # 直前のセクションを確定
                 flush()
                 heading_text = m.group(2).strip()
-                qm = question_re.match(heading_text)
-                if qm:
+                question = question_text(heading_text)
+                if question:
                     cur_is_q = True
-                    cur_qtext = qm.group(1).strip()
+                    cur_qtext = question
                     cur_body = []
                 else:
                     cur_is_q = False
@@ -263,8 +278,8 @@ class SiteGenerator:
                 continue
             # コードブロック・画像・リンクの装飾を最低限除去
             text = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
-            text = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", text)
-            text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)
+            text = re.sub(r"!\[[^\[\]\n]*\]\([^()\n]*\)", "", text)
+            text = re.sub(r"\[([^\[\]\n]+)\]\([^()\n]*\)", r"\1", text)
             text = re.sub(r"^[\s>*\-]+", "", text, flags=re.MULTILINE)
             text = re.sub(r"\n{2,}", "\n\n", text).strip()
             # 長すぎる答えは800字でトリミング（schema.orgの実用範囲）
