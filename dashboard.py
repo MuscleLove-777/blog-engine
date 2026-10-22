@@ -6,6 +6,8 @@ FastAPIベースの管理画面。記事管理・統計・設定の閲覧が可�
 
 import json
 import re
+from html import escape
+from urllib.parse import quote
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -13,6 +15,14 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
+
+
+def _text(value) -> str:
+    return escape(str(value), quote=True)
+
+
+def _url_component(value) -> str:
+    return quote(str(value), safe="")
 
 
 def create_app(config, prompts=None):
@@ -94,7 +104,7 @@ def create_app(config, prompts=None):
         return round(sum(scores) / len(scores), 1) if scores else 0.0
 
     def _markdown_to_html(text: str) -> str:
-        lines = text.split("\n")
+        lines = escape(str(text), quote=True).split("\n")
         html_lines = []
         in_list = False
         for line in lines:
@@ -297,7 +307,7 @@ def create_app(config, prompts=None):
         for href, label in links:
             cls = ' class="active"' if active == href else ""
             items += f'<a href="{href}"{cls}>{label}</a>\n'
-        return f'<nav class="sidebar"><h1>{config.BLOG_NAME}</h1>{items}</nav>'
+        return f'<nav class="sidebar"><h1>{_text(config.BLOG_NAME)}</h1>{items}</nav>'
 
     def _base(title: str, content: str, active: str = "") -> str:
         return f"""<!DOCTYPE html>
@@ -305,7 +315,7 @@ def create_app(config, prompts=None):
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{title} | {config.BLOG_NAME} 管理</title>
+    <title>{_text(title)} | {_text(config.BLOG_NAME)} 管理</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Sans+JP:wght@400;600;700&display=swap" rel="stylesheet">
     {CSS}
@@ -331,7 +341,7 @@ def create_app(config, prompts=None):
 
         cat_cards = ""
         for cat, cnt in cat_counts.items():
-            cat_cards += f'<div class="card"><div class="card-label">{cat}</div><div class="card-value">{cnt}</div><div class="card-sub">記事</div></div>'
+            cat_cards += f'<div class="card"><div class="card-label">{_text(cat)}</div><div class="card-value">{cnt}</div><div class="card-sub">記事</div></div>'
 
         latest = articles[:10]
         rows = ""
@@ -342,7 +352,7 @@ def create_app(config, prompts=None):
             created = a.get("created_at", "-")[:10]
             seo = a.get("seo_score", 0)
             seo_pct = min(int(seo), 100)
-            rows += f'<tr><td>{created}</td><td><a href="/articles/{slug}">{title_text}</a></td><td><span class="badge">{cat}</span></td><td><span class="score-bar"><span class="score-bar-fill" style="width:{seo_pct}%"></span></span>{seo}</td></tr>'
+            rows += f'<tr><td>{_text(created)}</td><td><a href="/articles/{_url_component(slug)}">{_text(title_text)}</a></td><td><span class="badge">{_text(cat)}</span></td><td><span class="score-bar"><span class="score-bar-fill" style="width:{seo_pct}%"></span></span>{_text(seo)}</td></tr>'
 
         content = f"""
         <h1 class="page-title">ダッシュボード</h1>
@@ -370,7 +380,7 @@ def create_app(config, prompts=None):
         filter_links = f'<a href="/articles" class="{"active" if not category else ""}">すべて</a>\n'
         for cat in all_cats:
             active_cls = "active" if category == cat else ""
-            filter_links += f'<a href="/articles?category={cat}" class="{active_cls}">{cat}</a>\n'
+            filter_links += f'<a href="/articles?category={_url_component(cat)}" class="{active_cls}">{_text(cat)}</a>\n'
         rows = ""
         for a in articles:
             slug = a.get("slug", "")
@@ -379,7 +389,7 @@ def create_app(config, prompts=None):
             created = a.get("created_at", "-")[:16].replace("T", " ")
             seo = a.get("seo_score", 0)
             seo_pct = min(int(seo), 100)
-            rows += f'<tr><td>{created}</td><td><a href="/articles/{slug}">{title_text}</a></td><td><span class="badge">{cat}</span></td><td><span class="score-bar"><span class="score-bar-fill" style="width:{seo_pct}%"></span></span>{seo}</td></tr>'
+            rows += f'<tr><td>{_text(created)}</td><td><a href="/articles/{_url_component(slug)}">{_text(title_text)}</a></td><td><span class="badge">{_text(cat)}</span></td><td><span class="score-bar"><span class="score-bar-fill" style="width:{seo_pct}%"></span></span>{_text(seo)}</td></tr>'
         content = f"""
         <h1 class="page-title">記事一覧</h1>
         <div class="filter-bar">{filter_links}</div>
@@ -418,24 +428,24 @@ def create_app(config, prompts=None):
         meta_len = getattr(config, "META_DESCRIPTION_LENGTH", 120)
 
         content = f"""
-        <h1 class="page-title">{title_text}</h1>
+        <h1 class="page-title">{_text(title_text)}</h1>
         <div class="cards">
-            <div class="card"><div class="card-label">SEOスコア</div><div class="card-value" style="color:{seo_color}">{seo_score}</div><div class="card-sub">/ 100</div></div>
+            <div class="card"><div class="card-label">SEOスコア</div><div class="card-value" style="color:{seo_color}">{_text(seo_score)}</div><div class="card-sub">/ 100</div></div>
             <div class="card"><div class="card-label">文字数</div><div class="card-value">{word_count:,}</div><div class="card-sub">文字</div></div>
             <div class="card"><div class="card-label">見出し数</div><div class="card-value">{headings_count}</div><div class="card-sub">個</div></div>
-            <div class="card"><div class="card-label">キーワード密度</div><div class="card-value" style="font-size:24px;">{keyword_density}%</div><div class="card-sub">目標: {min_kd}〜{max_kd}%</div></div>
+            <div class="card"><div class="card-label">キーワード密度</div><div class="card-value" style="font-size:24px;">{_text(keyword_density)}%</div><div class="card-sub">目標: {_text(min_kd)}〜{_text(max_kd)}%</div></div>
         </div>
         <div class="table-wrap"><h2>メタ情報</h2>
             <div class="meta-grid">
-                <div class="meta-item"><dt>カテゴリ</dt><dd>{cat}</dd></div>
-                <div class="meta-item"><dt>ターゲットキーワード</dt><dd>{keyword}</dd></div>
-                <div class="meta-item"><dt>作成日時</dt><dd>{created}</dd></div>
-                <div class="meta-item"><dt>スラッグ</dt><dd>{slug}</dd></div>
+                <div class="meta-item"><dt>カテゴリ</dt><dd>{_text(cat)}</dd></div>
+                <div class="meta-item"><dt>ターゲットキーワード</dt><dd>{_text(keyword)}</dd></div>
+                <div class="meta-item"><dt>作成日時</dt><dd>{_text(created)}</dd></div>
+                <div class="meta-item"><dt>スラッグ</dt><dd>{_text(slug)}</dd></div>
             </div>
         </div>
         <div class="table-wrap"><h2>メタディスクリプション</h2>
-            <p style="color:#64748B;font-size:14px;line-height:1.6;">{meta_desc}</p>
-            <p style="font-size:12px;color:#94A3B8;margin-top:8px;">{len(meta_desc)} 文字（推奨: {meta_len}文字以内）</p>
+            <p style="color:#64748B;font-size:14px;line-height:1.6;">{_text(meta_desc)}</p>
+            <p style="font-size:12px;color:#94A3B8;margin-top:8px;">{len(meta_desc)} 文字（推奨: {_text(meta_len)}文字以内）</p>
         </div>
         <div class="article-content"><h2 style="margin-top:0;">記事プレビュー</h2>
             <hr style="border:none;border-top:1px solid #E2E8F0;margin:16px 0;">
@@ -458,24 +468,24 @@ def create_app(config, prompts=None):
         <h1 class="page-title">設定</h1>
         <div class="settings-grid">
             <div class="setting-group"><h3>ブログ基本設定</h3>
-                <div class="setting-row"><span class="label">ブログ名</span><span class="value">{config.BLOG_NAME}</span></div>
-                <div class="setting-row"><span class="label">説明</span><span class="value">{config.BLOG_DESCRIPTION}</span></div>
-                <div class="setting-row"><span class="label">URL</span><span class="value">{config.BLOG_URL}</span></div>
+                <div class="setting-row"><span class="label">ブログ名</span><span class="value">{_text(config.BLOG_NAME)}</span></div>
+                <div class="setting-row"><span class="label">説明</span><span class="value">{_text(config.BLOG_DESCRIPTION)}</span></div>
+                <div class="setting-row"><span class="label">URL</span><span class="value">{_text(config.BLOG_URL)}</span></div>
             </div>
             <div class="setting-group"><h3>記事生成設定</h3>
                 <div class="setting-row"><span class="label">文字数目安</span><span class="value">{config.MAX_ARTICLE_LENGTH:,} 文字</span></div>
                 <div class="setting-row"><span class="label">1日の記事数</span><span class="value">{config.ARTICLES_PER_DAY} 記事</span></div>
-                <div class="setting-row"><span class="label">対象カテゴリ</span><span class="value">{cats_list}</span></div>
+                <div class="setting-row"><span class="label">対象カテゴリ</span><span class="value">{_text(cats_list)}</span></div>
             </div>
             <div class="setting-group"><h3>SEO設定</h3>
-                <div class="setting-row"><span class="label">最小キーワード密度</span><span class="value">{min_kd}%</span></div>
-                <div class="setting-row"><span class="label">最大キーワード密度</span><span class="value">{max_kd}%</span></div>
-                <div class="setting-row"><span class="label">メタ説明文の長さ</span><span class="value">{meta_len} 文字</span></div>
+                <div class="setting-row"><span class="label">最小キーワード密度</span><span class="value">{_text(min_kd)}%</span></div>
+                <div class="setting-row"><span class="label">最大キーワード密度</span><span class="value">{_text(max_kd)}%</span></div>
+                <div class="setting-row"><span class="label">メタ説明文の長さ</span><span class="value">{_text(meta_len)} 文字</span></div>
             </div>
             <div class="setting-group"><h3>スケジューラー設定</h3>
-                <div class="setting-row"><span class="label">投稿スケジュール</span><span class="value">{hours_list}</span></div>
-                <div class="setting-row"><span class="label">ダッシュボードホスト</span><span class="value">{host}</span></div>
-                <div class="setting-row"><span class="label">ダッシュボードポート</span><span class="value">{port}</span></div>
+                <div class="setting-row"><span class="label">投稿スケジュール</span><span class="value">{_text(hours_list)}</span></div>
+                <div class="setting-row"><span class="label">ダッシュボードホスト</span><span class="value">{_text(host)}</span></div>
+                <div class="setting-row"><span class="label">ダッシュボードポート</span><span class="value">{_text(port)}</span></div>
             </div>
         </div>"""
         return HTMLResponse(_base("設定", content, active="/settings"))
