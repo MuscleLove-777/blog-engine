@@ -142,6 +142,9 @@ class SiteGenerator:
 
         self._generate_verification_files()
 
+        self._generate_ai_files(articles)
+        print("  2AIファイル生成: robots.txt / llms.txt")
+
         print(f"[サイト生成] 完了 - {self.output_dir}")
 
     def _load_articles(self) -> list:
@@ -353,6 +356,67 @@ class SiteGenerator:
         lines.append("</urlset>")
 
         (self.output_dir / "sitemap.xml").write_text("\n".join(lines), encoding="utf-8")
+
+    # ------------------------------------------------------------------
+    # 2AI アーキテクチャ: AI検索・AIエージェント向けファイル
+    # robots.txt(AIクローラー明示許可) と llms.txt(llmstxt.org 形式の
+    # AI向けサイト索引)をビルドごとに最新状態で生成する。
+    # workflow 側の後付け cp/cat ステップより本体生成を正とする。
+    # ------------------------------------------------------------------
+
+    _AI_BOTS = [
+        "GPTBot", "OAI-SearchBot", "ChatGPT-User",
+        "ClaudeBot", "Claude-SearchBot", "Claude-User",
+        "PerplexityBot", "Perplexity-User",
+        "Google-Extended", "GoogleOther", "Applebot-Extended",
+        "Meta-ExternalAgent", "Amazonbot", "CCBot",
+        "DuckAssistBot", "MistralAI-User",
+    ]
+
+    def _generate_ai_files(self, articles):
+        blog_url = self.config.BLOG_URL.rstrip("/")
+        blog_name = self.config.BLOG_NAME
+        description = getattr(self.config, "BLOG_DESCRIPTION", "") or blog_name
+
+        # robots.txt — AI クローラーを明示許可
+        lines = ["# === AI crawlers (2AI architecture) ==="]
+        for bot in self._AI_BOTS:
+            lines += [f"User-agent: {bot}", "Allow: /", ""]
+        lines += [
+            "User-agent: *",
+            "Allow: /",
+            "",
+            f"Sitemap: {blog_url}/sitemap.xml",
+            "",
+            "# AI content index",
+            f"# llms.txt: {blog_url}/llms.txt",
+        ]
+        (self.output_dir / "robots.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+        # llms.txt — llmstxt.org 形式(最新記事20件 + カテゴリ)
+        def _date_key(a):
+            return str(a.get("date", ""))
+
+        recent = sorted(articles, key=_date_key, reverse=True)[:20]
+        out = [f"# {blog_name}", "", f"> {description}", "", "## Main Pages",
+               f"- [ホーム]({blog_url}/index.html): 最新記事一覧"]
+        for category in sorted(self._group_by_category(articles)):
+            safe = self._slugify(category)
+            out.append(f"- [{category}]({blog_url}/category/{safe}.html): カテゴリ別記事一覧")
+        out += ["", "## Articles (most recent)"]
+        for a in recent:
+            slug = a.get("slug", "untitled")
+            title = a.get("title", slug)
+            desc = (a.get("description") or a.get("meta_description") or "").strip()
+            suffix = f": {desc}" if desc else ""
+            out.append(f"- [{title}]({blog_url}/articles/{slug}.html){suffix}")
+        out += [
+            "",
+            "## About this file",
+            "This llms.txt (llmstxt.org) is auto-generated on every site build",
+            "to help AI search engines and agents index this site efficiently.",
+        ]
+        (self.output_dir / "llms.txt").write_text("\n".join(out) + "\n", encoding="utf-8")
 
     def _generate_rss(self, articles):
         blog_url = self.config.BLOG_URL
